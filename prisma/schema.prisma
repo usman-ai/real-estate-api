@@ -1,6 +1,3 @@
-// Prisma schema is intentionally minimal in phase 1.
-// Full data model (User, Lead, LeadEvent, enums) lands in phase 2.
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,4 +5,171 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+// =====================================================================
+// Enums
+// =====================================================================
+
+enum Role {
+  LEAD_GENERATION
+  LEAD_GENERATION_SUPERVISOR
+  AGENT_SUPERVISOR
+  AGENT
+}
+
+enum LeadSource {
+  WEBSITE
+  FACEBOOK
+  INSTAGRAM
+  WHATSAPP
+  GOOGLE_CAMPAIGN
+  PROPERTY_PORTAL
+  PHONE_CALL
+  MANUAL_ENTRY
+}
+
+enum LeadStatus {
+  NEW
+  LEAD_GENERATION_FOLLOW_UP
+  QUALIFIED
+  PENDING_AGENT_ASSIGNMENT
+  AGENT_ASSIGNED
+  CONVERTED_PENDING_APPROVAL
+  DROPPED_PENDING_APPROVAL
+  NOT_QUALIFIED
+  CLOSED
+}
+
+enum PropertyType {
+  APARTMENT
+  VILLA
+  TOWNHOUSE
+  OFFICE
+  RETAIL
+  LAND
+}
+
+enum Priority {
+  HOT
+  WARM
+  COLD
+}
+
+enum NotQualifiedReason {
+  BUDGET_NOT_SUITABLE
+  PROPERTY_NOT_AVAILABLE
+  NOT_INTERESTED
+  DUPLICATE_LEAD
+  INVALID_CONTACT
+  FUTURE_REQUIREMENT
+  UNABLE_TO_CONTACT
+  OTHER
+}
+
+enum DroppedReason {
+  BUDGET_ISSUE
+  LOST_TO_COMPETITOR
+  CUSTOMER_UNRESPONSIVE
+  PROPERTY_UNAVAILABLE
+  OTHER
+}
+
+enum LeadEventType {
+  LEAD_CREATED
+  QUALIFICATION_STARTED
+  LEAD_QUALIFIED
+  PENDING_AGENT_ASSIGNMENT
+  LEAD_MARKED_NOT_QUALIFIED
+  AGENT_ASSIGNED
+  AGENT_REASSIGNED
+  LEAD_MARKED_CONVERTED
+  LEAD_MARKED_DROPPED
+  OUTCOME_APPROVED
+  LEAD_CLOSED
+}
+
+// =====================================================================
+// Models
+// =====================================================================
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  createdLeads  Lead[]      @relation("LeadCreatedBy")
+  assignedLeads Lead[]      @relation("LeadAssignedTo")
+  events        LeadEvent[]
+
+  @@index([role])
+}
+
+model Lead {
+  id                 Int           @id @default(autoincrement())
+  name               String
+  phone              String
+  whatsappNumber     String?
+  email              String?
+  // source is IMMUTABLE after creation — no update path anywhere in the API.
+  source             LeadSource
+  campaign           String?
+  interestedLocation String?
+  propertyType       PropertyType?
+  bedrooms           Int?
+  budgetFrom         Decimal?      @db.Decimal(12, 2)
+  budgetTo           Decimal?      @db.Decimal(12, 2)
+  movingDate         DateTime?     @db.Date
+  priority           Priority?
+  status             LeadStatus    @default(NEW)
+  assignedAgentId    Int?
+  createdByUserId    Int
+
+  // Qualification
+  qualificationComment String?
+  notQualifiedReason   NotQualifiedReason?
+  notQualifiedComment  String?
+
+  // Outcome — converted
+  convertedPropertyId Int?
+  convertedUnitId     Int?
+  convertedComment    String?
+
+  // Outcome — dropped
+  droppedReason  DroppedReason?
+  droppedComment String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdBy     User        @relation("LeadCreatedBy", fields: [createdByUserId], references: [id])
+  assignedAgent User?       @relation("LeadAssignedTo", fields: [assignedAgentId], references: [id])
+  events        LeadEvent[]
+
+  @@index([status])
+  @@index([assignedAgentId])
+  @@index([phone])
+  @@index([whatsappNumber])
+  @@index([email])
+  @@index([createdAt])
+}
+
+model LeadEvent {
+  id                Int           @id @default(autoincrement())
+  leadId            Int
+  type              LeadEventType
+  performedByUserId Int
+  occurredAt        DateTime      @default(now())
+  metadata          Json?
+  comment           String?
+
+  lead        Lead @relation(fields: [leadId], references: [id], onDelete: Restrict)
+  performedBy User @relation(fields: [performedByUserId], references: [id])
+
+  @@index([leadId, occurredAt])
+  @@index([type])
 }

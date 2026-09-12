@@ -24,5 +24,9 @@ npm-debug.log*
 prisma/*.db
 prisma/*.db-journal
 
+# Local docker-compose override (dev-only)
+docker-compose.override.yml
+docker-compose.override.yaml
+
 # Test artefacts
 test-results/

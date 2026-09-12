@@ -43,6 +43,10 @@ services:
       JWT_SECRET: change-me-in-real-life-please
       JWT_EXPIRES_IN: 1d
       SEED_USER_PASSWORD: Passw0rd!
+    # Compose-level override: apply migrations, seed test users (idempotent via
+    # upsert), then start the app. Seeding is intentionally out of the Dockerfile
+    # CMD so production images don't auto-seed.
+    command: sh -c "npx prisma migrate deploy && npx prisma db seed && node dist/src/main.js"
     ports:
       - "3000:3000"
 
