@@ -7,6 +7,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
@@ -20,6 +21,7 @@ import { MarkNotQualifiedDto } from './dto/mark-not-qualified.dto';
 import { AssignAgentDto } from './dto/assign-agent.dto';
 import { ConvertLeadDto } from './dto/convert-lead.dto';
 import { DropLeadDto } from './dto/drop-lead.dto';
+import { ListLeadsQueryDto } from './dto/list-leads-query.dto';
 
 @ApiTags('leads')
 @ApiBearerAuth()
@@ -46,11 +48,12 @@ export class LeadsController {
     summary: 'List leads visible to the caller',
     description:
       'AGENT sees only leads assigned to themselves; every other role sees all. ' +
-      'Hard-capped at 100 rows in this phase; filters (?status, ?assignedAgentId) ' +
-      'land in the next phase.',
+      'Optional filters: ?status=<LeadStatus>, ?assignedAgentId=<userId>. ' +
+      'Filters are always AND-ed with the caller\'s visibility scope. ' +
+      'Hard cap: 100 rows.',
   })
-  findAll(@CurrentUser() user: AuthenticatedUser) {
-    return this.leads.findAll(user);
+  findAll(@Query() query: ListLeadsQueryDto, @CurrentUser() user: AuthenticatedUser) {
+    return this.leads.findAll(user, query);
   }
 
   @Get(':id')

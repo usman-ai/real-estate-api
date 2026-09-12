@@ -12,6 +12,7 @@ import { MarkNotQualifiedDto } from './dto/mark-not-qualified.dto';
 import { AssignAgentDto } from './dto/assign-agent.dto';
 import { ConvertLeadDto } from './dto/convert-lead.dto';
 import { DropLeadDto } from './dto/drop-lead.dto';
+import { ListLeadsQueryDto } from './dto/list-leads-query.dto';
 import { LeadStateMachine } from './state-machine/lead-state-machine';
 import { LeadAccessPolicy } from './policies/lead-access.policy';
 
@@ -30,9 +31,15 @@ export class LeadsService {
 
   // --- Retrieval ----------------------------------------------------------
 
-  async findAll(actor: AuthenticatedUser): Promise<Lead[]> {
+  async findAll(actor: AuthenticatedUser, query: ListLeadsQueryDto = {}): Promise<Lead[]> {
+    // Visibility scope is ALWAYS AND-ed with any caller filters — so an AGENT
+    // filtering by another AGENT's id gets an empty list (not a leak).
+    const clauses: Prisma.LeadWhereInput[] = [this.accessPolicy.filterForList(actor)];
+    if (query.status) clauses.push({ status: query.status });
+    if (query.assignedAgentId) clauses.push({ assignedAgentId: query.assignedAgentId });
+
     return this.prisma.lead.findMany({
-      where: this.accessPolicy.filterForList(actor),
+      where: { AND: clauses },
       orderBy: { id: 'desc' },
       take: LIST_LIMIT,
     });
