@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: aredc
+      POSTGRES_PASSWORD: aredc
+      POSTGRES_DB: aredc
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aredc -d aredc"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  postgres_test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: aredc
+      POSTGRES_PASSWORD: aredc
+      POSTGRES_DB: aredc_test
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aredc -d aredc_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://aredc:aredc@postgres:5432/aredc?schema=public
+      JWT_SECRET: change-me-in-real-life-please
+      JWT_EXPIRES_IN: 1d
+      SEED_USER_PASSWORD: Passw0rd!
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:

@@ -1,0 +1,17 @@
+node_modules
+dist
+coverage
+.git
+.env
+.env.*
+!.env.example
+*.log
+.vscode
+.idea
+test-results
+Dockerfile
+.dockerignore
+docker-compose.yml
+README.md
+*.md
+!AREDC-Technical-Assessment-Lead-Management-API.md

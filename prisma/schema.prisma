@@ -1,0 +1,11 @@
+// Prisma schema is intentionally minimal in phase 1.
+// Full data model (User, Lead, LeadEvent, enums) lands in phase 2.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
