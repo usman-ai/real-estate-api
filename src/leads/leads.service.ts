@@ -1,13 +1,17 @@
 import { Injectable } from '@nestjs/common';
-import { Lead, LeadEventType, LeadStatus, Prisma } from '@prisma/client';
+import { Lead, LeadEventType, LeadStatus, Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { TimelineService } from '../timeline/timeline.service';
 import { PossibleDuplicateError } from '../common/errors/possible-duplicate.error';
 import { LeadNotFoundError } from '../common/errors/lead-not-found.error';
+import { InvalidAgentError } from '../common/errors/invalid-agent.error';
 import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { QualifyDto } from './dto/qualify.dto';
 import { MarkNotQualifiedDto } from './dto/mark-not-qualified.dto';
+import { AssignAgentDto } from './dto/assign-agent.dto';
+import { ConvertLeadDto } from './dto/convert-lead.dto';
+import { DropLeadDto } from './dto/drop-lead.dto';
 import { LeadStateMachine } from './state-machine/lead-state-machine';
 
 type Tx = Omit<Prisma.TransactionClient, '$connect' | '$disconnect'>;
@@ -96,9 +100,6 @@ export class LeadsService {
     return this.prisma.$transaction(async (tx) => {
       const lead = await this.getLeadOrThrow(tx, leadId);
 
-      // Assert both hops of the spec's diagram in one place. We collapse the
-      // persisted status directly to PENDING_AGENT_ASSIGNMENT since QUALIFIED
-      // is a transient state, but both audit events are emitted.
       this.stateMachine.assertTransition(lead.status, LeadStatus.QUALIFIED, actor, lead);
       this.stateMachine.assertTransition(
         LeadStatus.QUALIFIED,
@@ -165,6 +166,154 @@ export class LeadsService {
         performedByUserId: actor.id,
         comment: dto.comment,
         metadata: { reason: dto.reason },
+      });
+
+      return updated;
+    });
+  }
+
+  // --- Assign / Reassign (PAA → AGENT_ASSIGNED, or AA → AA) --------------
+
+  async assign(leadId: number, actor: AuthenticatedUser, dto: AssignAgentDto): Promise<Lead> {
+    return this.prisma.$transaction(async (tx) => {
+      const lead = await this.getLeadOrThrow(tx, leadId);
+
+      const agent = await tx.user.findUnique({ where: { id: dto.agentId } });
+      if (!agent || !agent.isActive) {
+        throw new InvalidAgentError(dto.agentId, `Agent ${dto.agentId} not found or inactive`);
+      }
+      if (agent.role !== Role.AGENT) {
+        throw new InvalidAgentError(
+          dto.agentId,
+          `User ${dto.agentId} has role ${agent.role}, not AGENT`,
+        );
+      }
+
+      // State machine allows PENDING_AGENT_ASSIGNMENT → AGENT_ASSIGNED (first
+      // assignment) and AGENT_ASSIGNED → AGENT_ASSIGNED (reassignment).
+      this.stateMachine.assertTransition(lead.status, LeadStatus.AGENT_ASSIGNED, actor, lead);
+
+      const isReassignment = lead.status === LeadStatus.AGENT_ASSIGNED;
+      const previousAgentId = lead.assignedAgentId;
+
+      const updated = await tx.lead.update({
+        where: { id: leadId },
+        data: {
+          status: LeadStatus.AGENT_ASSIGNED,
+          assignedAgentId: dto.agentId,
+        },
+      });
+
+      await this.timeline.record(tx, {
+        leadId,
+        type: isReassignment ? LeadEventType.AGENT_REASSIGNED : LeadEventType.AGENT_ASSIGNED,
+        performedByUserId: actor.id,
+        metadata: isReassignment
+          ? { agentId: dto.agentId, previousAgentId }
+          : { agentId: dto.agentId },
+      });
+
+      return updated;
+    });
+  }
+
+  // --- Convert (AA → CONVERTED_PENDING_APPROVAL, assigned agent only) ----
+
+  async convert(leadId: number, actor: AuthenticatedUser, dto: ConvertLeadDto): Promise<Lead> {
+    return this.prisma.$transaction(async (tx) => {
+      const lead = await this.getLeadOrThrow(tx, leadId);
+      this.stateMachine.assertTransition(
+        lead.status,
+        LeadStatus.CONVERTED_PENDING_APPROVAL,
+        actor,
+        lead,
+      );
+
+      const updated = await tx.lead.update({
+        where: { id: leadId },
+        data: {
+          status: LeadStatus.CONVERTED_PENDING_APPROVAL,
+          convertedPropertyId: dto.propertyId,
+          convertedUnitId: dto.unitId,
+          convertedComment: dto.comment,
+        },
+      });
+
+      await this.timeline.record(tx, {
+        leadId,
+        type: LeadEventType.LEAD_MARKED_CONVERTED,
+        performedByUserId: actor.id,
+        comment: dto.comment,
+        metadata: { propertyId: dto.propertyId, unitId: dto.unitId },
+      });
+
+      return updated;
+    });
+  }
+
+  // --- Drop (AA → DROPPED_PENDING_APPROVAL, assigned agent only) ---------
+
+  async drop(leadId: number, actor: AuthenticatedUser, dto: DropLeadDto): Promise<Lead> {
+    return this.prisma.$transaction(async (tx) => {
+      const lead = await this.getLeadOrThrow(tx, leadId);
+      this.stateMachine.assertTransition(
+        lead.status,
+        LeadStatus.DROPPED_PENDING_APPROVAL,
+        actor,
+        lead,
+      );
+
+      const updated = await tx.lead.update({
+        where: { id: leadId },
+        data: {
+          status: LeadStatus.DROPPED_PENDING_APPROVAL,
+          droppedReason: dto.reason,
+          droppedComment: dto.comment,
+        },
+      });
+
+      await this.timeline.record(tx, {
+        leadId,
+        type: LeadEventType.LEAD_MARKED_DROPPED,
+        performedByUserId: actor.id,
+        comment: dto.comment,
+        metadata: { reason: dto.reason },
+      });
+
+      return updated;
+    });
+  }
+
+  // --- Approve (CONVERTED/DROPPED PENDING_APPROVAL → CLOSED) --------------
+
+  async approve(leadId: number, actor: AuthenticatedUser): Promise<Lead> {
+    return this.prisma.$transaction(async (tx) => {
+      const lead = await this.getLeadOrThrow(tx, leadId);
+      // assertTransition rejects anything that isn't a *_PENDING_APPROVAL state
+      // (only those have CLOSED as a valid target).
+      this.stateMachine.assertTransition(lead.status, LeadStatus.CLOSED, actor, lead);
+
+      const previousStatus = lead.status;
+
+      const updated = await tx.lead.update({
+        where: { id: leadId },
+        data: { status: LeadStatus.CLOSED },
+      });
+
+      // Two events for a clean timeline: what got approved, then final close.
+      await this.timeline.record(tx, {
+        leadId,
+        type: LeadEventType.OUTCOME_APPROVED,
+        performedByUserId: actor.id,
+        metadata: {
+          approvedOutcome:
+            previousStatus === LeadStatus.CONVERTED_PENDING_APPROVAL ? 'CONVERTED' : 'DROPPED',
+        },
+      });
+      await this.timeline.record(tx, {
+        leadId,
+        type: LeadEventType.LEAD_CLOSED,
+        performedByUserId: actor.id,
       });
 
       return updated;

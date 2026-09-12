@@ -16,6 +16,9 @@ import { LeadsService } from './leads.service';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { QualifyDto } from './dto/qualify.dto';
 import { MarkNotQualifiedDto } from './dto/mark-not-qualified.dto';
+import { AssignAgentDto } from './dto/assign-agent.dto';
+import { ConvertLeadDto } from './dto/convert-lead.dto';
+import { DropLeadDto } from './dto/drop-lead.dto';
 
 @ApiTags('leads')
 @ApiBearerAuth()
@@ -81,5 +84,71 @@ export class LeadsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.leads.markNotQualified(id, user, dto);
+  }
+
+  @Post(':id/assign')
+  @Roles(Role.AGENT_SUPERVISOR)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Assign or reassign a lead to an agent',
+    description:
+      'PENDING_AGENT_ASSIGNMENT → AGENT_ASSIGNED (first assignment), or ' +
+      'AGENT_ASSIGNED → AGENT_ASSIGNED (reassignment). The endpoint auto-detects ' +
+      'and emits AGENT_ASSIGNED or AGENT_REASSIGNED accordingly. Rejects agentId ' +
+      'that is not an active user with role=AGENT.',
+  })
+  assign(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: AssignAgentDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.leads.assign(id, user, dto);
+  }
+
+  @Post(':id/convert')
+  @Roles(Role.AGENT)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Mark a lead as converted (pending approval)',
+    description:
+      'AGENT_ASSIGNED → CONVERTED_PENDING_APPROVAL. Only the assigned agent may ' +
+      'call this; another AGENT gets 403 LEAD_NOT_ACCESSIBLE.',
+  })
+  convert(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: ConvertLeadDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.leads.convert(id, user, dto);
+  }
+
+  @Post(':id/drop')
+  @Roles(Role.AGENT)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Mark a lead as dropped (pending approval)',
+    description:
+      'AGENT_ASSIGNED → DROPPED_PENDING_APPROVAL. Only the assigned agent may ' +
+      'call this; another AGENT gets 403 LEAD_NOT_ACCESSIBLE.',
+  })
+  drop(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: DropLeadDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.leads.drop(id, user, dto);
+  }
+
+  @Post(':id/approve')
+  @Roles(Role.LEAD_GENERATION_SUPERVISOR)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Approve a pending outcome (CONVERTED or DROPPED) and close the lead',
+    description:
+      '{CONVERTED,DROPPED}_PENDING_APPROVAL → CLOSED. Emits OUTCOME_APPROVED and ' +
+      'LEAD_CLOSED. History is retained after close.',
+  })
+  approve(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: AuthenticatedUser) {
+    return this.leads.approve(id, user);
   }
 }
