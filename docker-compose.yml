@@ -46,7 +46,7 @@ services:
     # Compose-level override: apply migrations, seed test users (idempotent via
     # upsert), then start the app. Seeding is intentionally out of the Dockerfile
     # CMD so production images don't auto-seed.
-    command: sh -c "npx prisma migrate deploy && npx prisma db seed && node dist/src/main.js"
+    command: sh -c "npx prisma migrate deploy && npx prisma db seed && node dist/main.js"
     ports:
       - "3000:3000"
 

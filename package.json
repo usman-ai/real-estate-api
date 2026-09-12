@@ -5,7 +5,7 @@
   "description": "Real Estate Lead Management API (AREDC technical assessment)",
   "scripts": {
     "build": "nest build",
-    "start": "node dist/src/main.js",
+    "start": "node dist/main.js",
     "start:dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",

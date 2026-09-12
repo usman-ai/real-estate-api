@@ -33,4 +33,4 @@ USER app
 EXPOSE 3000
 ENTRYPOINT ["/sbin/tini", "--"]
 # Migrations are applied at startup so a fresh `docker compose up` gives a working DB.
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
