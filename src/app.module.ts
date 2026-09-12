@@ -4,6 +4,8 @@ import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
+import { LeadsModule } from './leads/leads.module';
+import { TimelineModule } from './timeline/timeline.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 
@@ -13,6 +15,8 @@ import { RolesGuard } from './common/guards/roles.guard';
     PrismaModule,
     UsersModule,
     AuthModule,
+    TimelineModule,
+    LeadsModule,
   ],
   providers: [
     // JwtAuthGuard runs first: authenticates every request (bypassed by @Public).
