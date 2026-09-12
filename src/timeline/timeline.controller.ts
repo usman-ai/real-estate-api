@@ -1,6 +1,8 @@
 import { Controller, Get, Param, ParseIntPipe } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { TimelineService } from './timeline.service';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import type { AuthenticatedUser } from '../auth/strategies/jwt.strategy';
 
 @ApiTags('leads')
 @ApiBearerAuth()
@@ -13,10 +15,10 @@ export class TimelineController {
     summary: "Get a lead's timeline (audit trail)",
     description:
       'Chronological (occurredAt ASC) list of every audit event for the lead. ' +
-      'Retained after the lead is CLOSED. Per-lead visibility filtering is added ' +
-      'in the next phase — for now any authenticated user may read any timeline.',
+      'Retained after the lead is CLOSED. An AGENT sees only their own assigned ' +
+      "leads' timelines; other leads return 404.",
   })
-  get(@Param('id', ParseIntPipe) id: number) {
-    return this.timeline.getForLead(id);
+  get(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: AuthenticatedUser) {
+    return this.timeline.getForLead(id, user);
   }
 }

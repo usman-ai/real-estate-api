@@ -13,8 +13,11 @@ import { AssignAgentDto } from './dto/assign-agent.dto';
 import { ConvertLeadDto } from './dto/convert-lead.dto';
 import { DropLeadDto } from './dto/drop-lead.dto';
 import { LeadStateMachine } from './state-machine/lead-state-machine';
+import { LeadAccessPolicy } from './policies/lead-access.policy';
 
 type Tx = Omit<Prisma.TransactionClient, '$connect' | '$disconnect'>;
+
+const LIST_LIMIT = 100;
 
 @Injectable()
 export class LeadsService {
@@ -22,7 +25,25 @@ export class LeadsService {
     private readonly prisma: PrismaService,
     private readonly timeline: TimelineService,
     private readonly stateMachine: LeadStateMachine,
+    private readonly accessPolicy: LeadAccessPolicy,
   ) {}
+
+  // --- Retrieval ----------------------------------------------------------
+
+  async findAll(actor: AuthenticatedUser): Promise<Lead[]> {
+    return this.prisma.lead.findMany({
+      where: this.accessPolicy.filterForList(actor),
+      orderBy: { id: 'desc' },
+      take: LIST_LIMIT,
+    });
+  }
+
+  async findOne(id: number, actor: AuthenticatedUser): Promise<Lead> {
+    const lead = await this.prisma.lead.findUnique({ where: { id } });
+    if (!lead) throw new LeadNotFoundError(id);
+    this.accessPolicy.assertCanView(actor, lead);
+    return lead;
+  }
 
   // --- Create -------------------------------------------------------------
 
@@ -189,8 +210,6 @@ export class LeadsService {
         );
       }
 
-      // State machine allows PENDING_AGENT_ASSIGNMENT → AGENT_ASSIGNED (first
-      // assignment) and AGENT_ASSIGNED → AGENT_ASSIGNED (reassignment).
       this.stateMachine.assertTransition(lead.status, LeadStatus.AGENT_ASSIGNED, actor, lead);
 
       const isReassignment = lead.status === LeadStatus.AGENT_ASSIGNED;
@@ -289,8 +308,6 @@ export class LeadsService {
   async approve(leadId: number, actor: AuthenticatedUser): Promise<Lead> {
     return this.prisma.$transaction(async (tx) => {
       const lead = await this.getLeadOrThrow(tx, leadId);
-      // assertTransition rejects anything that isn't a *_PENDING_APPROVAL state
-      // (only those have CLOSED as a valid target).
       this.stateMachine.assertTransition(lead.status, LeadStatus.CLOSED, actor, lead);
 
       const previousStatus = lead.status;
@@ -300,7 +317,6 @@ export class LeadsService {
         data: { status: LeadStatus.CLOSED },
       });
 
-      // Two events for a clean timeline: what got approved, then final close.
       await this.timeline.record(tx, {
         leadId,
         type: LeadEventType.OUTCOME_APPROVED,

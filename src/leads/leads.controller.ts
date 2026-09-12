@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
@@ -38,6 +39,29 @@ export class LeadsController {
   })
   create(@Body() dto: CreateLeadDto, @CurrentUser() user: AuthenticatedUser) {
     return this.leads.create(dto, user);
+  }
+
+  @Get()
+  @ApiOperation({
+    summary: 'List leads visible to the caller',
+    description:
+      'AGENT sees only leads assigned to themselves; every other role sees all. ' +
+      'Hard-capped at 100 rows in this phase; filters (?status, ?assignedAgentId) ' +
+      'land in the next phase.',
+  })
+  findAll(@CurrentUser() user: AuthenticatedUser) {
+    return this.leads.findAll(user);
+  }
+
+  @Get(':id')
+  @ApiOperation({
+    summary: 'Get a single lead',
+    description:
+      'Returns 404 (not 403) when the caller is not permitted to see the lead ' +
+      'so unprivileged callers cannot enumerate IDs from status codes.',
+  })
+  findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: AuthenticatedUser) {
+    return this.leads.findOne(id, user);
   }
 
   @Post(':id/pickup')
